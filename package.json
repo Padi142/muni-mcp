@@ -1,0 +1,26 @@
+{
+  "name": "muni-mcp",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.19"
+  },
+  "packageManager": "pnpm@9.1.1",
+  "scripts": {
+    "start": "tsx src/server.ts",
+    "test": "tsx --test src/**/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.4.0",
+    "cheerio": "^1.1.0",
+    "domhandler": "^5.0.3",
+    "fetch-cookie": "^3.1.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.0"
+  }
+}
