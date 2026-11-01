@@ -66,8 +66,8 @@ test("parses series terms, their registration state, and never exposes action li
 
 test("the session refuses registration-changing URLs before any request", async () => {
   const session = createIsSession({ username: "x", password: "y" });
-  await assert.rejects(session.getPage(`${base}?${ctx};zkt=1;odhlasit=1`), /changes registrations/);
-  await assert.rejects(session.getPage(`${base}?${ctx};zkt=1;prihlasit=1`), /changes registrations/);
+  await assert.rejects(session.getPage(`${base}?${ctx};zkt=1;odhlasit=1`), /changes data/);
+  await assert.rejects(session.getPage(`${base}?${ctx};zkt=1;prihlasit=1`), /changes data/);
 });
 
 test("IS dates resolve to Europe/Prague across DST", () => {

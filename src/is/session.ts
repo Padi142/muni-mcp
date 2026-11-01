@@ -1,3 +1,4 @@
+import { setTimeout as sleep } from "node:timers/promises";
 import { load } from "cheerio";
 import makeFetchCookie from "fetch-cookie";
 
@@ -7,6 +8,11 @@ const allowedOrigins = new Set([IS_ORIGIN, LOGIN_ORIGIN]);
 
 export type Credentials = { username: string; password: string };
 type Page = { url: URL; html: string };
+
+const MAX_CONCURRENT = 4;
+const RETRIES = 2;
+// IS occasionally drops keep-alive sockets or briefly refuses a request; both succeed on retry.
+const retryableStatus = new Set([409, 502, 503, 504]);
 
 function hasPasswordField(html: string) {
   return load(html)('input[type="password"]').length > 0;
@@ -19,6 +25,37 @@ function hasPasswordField(html: string) {
  */
 export function createIsSession(credentials: Credentials) {
   const cookieFetch = makeFetchCookie(fetch);
+  let active = 0;
+  const waiting: (() => void)[] = [];
+
+  // One HTTP exchange: at most MAX_CONCURRENT at a time; GETs retry on network errors and
+  // retryable statuses. The login POST is never retried.
+  async function send(url: URL, form?: URLSearchParams) {
+    while (active >= MAX_CONCURRENT) await new Promise<void>((resolve) => waiting.push(resolve));
+    active++;
+    try {
+      for (let attempt = 0; ; attempt++) {
+        const canRetry = !form && attempt < RETRIES;
+        try {
+          const response = await cookieFetch(url, {
+            method: form ? "POST" : "GET",
+            body: form,
+            redirect: "manual",
+            signal: AbortSignal.timeout(30_000),
+          });
+          if (!canRetry || !retryableStatus.has(response.status)) return response;
+          await response.body?.cancel();
+        } catch (error) {
+          // fetch reports network failures as TypeError; timeouts and other errors are final.
+          if (!canRetry || !(error instanceof TypeError)) throw error;
+        }
+        await sleep(500 * (attempt + 1));
+      }
+    } finally {
+      active--;
+      waiting.shift()?.();
+    }
+  }
 
   // Follow redirects manually so every hop stays on the two known HTTPS origins.
   async function request(url: URL, body?: URLSearchParams): Promise<Page> {
@@ -28,12 +65,7 @@ export function createIsSession(credentials: Credentials) {
       if (!allowedOrigins.has(current.origin)) {
         throw new Error("IS MU redirected to an unexpected origin.");
       }
-      const response = await cookieFetch(current, {
-        method: form ? "POST" : "GET",
-        body: form,
-        redirect: "manual",
-        signal: AbortSignal.timeout(30_000),
-      });
+      const response = await send(current, form);
       if ([301, 302, 303, 307, 308].includes(response.status)) {
         const location = response.headers.get("location");
         if (!location) throw new Error("A redirect did not provide a destination.");
@@ -84,9 +116,9 @@ export function createIsSession(credentials: Credentials) {
     async getPage(input: string | URL): Promise<Page> {
       const target = new URL(input, IS_ORIGIN);
       if (target.origin !== IS_ORIGIN) throw new Error("Only IS MU pages can be requested.");
-      // IS registers/unregisters exam terms through plain GET links carrying these flags.
-      if (/(?:^|[?;&])(?:prihlasit|odhlasit)=/i.test(target.search)) {
-        throw new Error("Refusing to request an IS MU URL that changes registrations.");
+      // IS changes state through plain GET links: exam (un)registration and actions like favourites.
+      if (/(?:^|[?;&])(?:prihlasit|odhlasit|operace)=/i.test(target.search)) {
+        throw new Error("Refusing to request an IS MU URL that changes data.");
       }
       let page = await request(target);
       if (page.url.origin === LOGIN_ORIGIN) {
