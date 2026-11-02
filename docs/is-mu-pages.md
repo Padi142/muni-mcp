@@ -32,12 +32,13 @@ Without query parameters it shows the current study and period. The overview lis
 ## Grades and notebooks
 
 - **Grades** (`/auth/student/moje_znamky`): `table.data3 tr.elem_vybrane_obdobi` rows with seven cells: `FAC:CODE` and name, credits, completion type, grade (cell class `ok`/`ko` for passed/failed), date, note (e.g. "uznáno"), and who entered it. `.elem_vybrane_obdobi_only` holds "Kredity v zobrazeném semestru: N z M". The page's `prepocist_kredity=1` link triggers a recount and is never requested.
-- **Notebooks** (`/auth/student/poznamkove_bloky_nahled`): one `li.ipb-seznam-pol` per course, one `.ipb-pol` per notebook with `.ipb-nazev`, raw content in `.ipb-obsah pre`, and `.ipb-zmeneno` (changed, by). By IS convention `*N` marks points and `@X` a final grade.
+- **Notebooks** (`/auth/student/poznamkove_bloky_nahled`, the current term without query parameters): one `li.ipb-seznam-pol#predmet_<id>` per course with a notebook, one `.ipb-pol` per notebook with `.ipb-nazev`, raw content in `.ipb-obsah pre`, and `.ipb-zmeneno` (changed, by). By IS convention `*N` marks points and `@X` a final grade. `.ipb-obsah-feedback` appears on notebooks with an attached submission folder and links the student's files as `/auth/el/.../ode/...`.
 
 ## Study materials
 
 - **Overview** (`/auth/student/studijni_materialy`): `h2` sections, each followed by a list or a "none" note: interactive syllabi, unread-file counts per course, open submission folders (odevzdávárny) with "(do D. M. YYYY vč.)", and all courses with materials (folder in the link's `furl`).
-- **Files** come from the documented File Manager API, `/auth/dok/fmgr_api?url=<folder>`, as XML. Each `uzel` lists its `poduzly/poduzel` subfolders, each with its own `objekty/objekt` files (`jmeno_souboru`, `mime_type`, `velikost`, `vlozeno` as local time, `vlozil_jmeno`, `cesta`). Numbered subfolders have no `nazev`. Objects with mime `my/url` are links whose target is the file name. Files download from `/auth<cesta>`. Many lecture PDFs have a `.txt` version.
+- **Files** come from the documented File Manager API, `/auth/dok/fmgr_api?url=<folder>`, as XML. Each `uzel` lists its `poduzly/poduzel` subfolders, each with its own `objekty/objekt` files (`jmeno_souboru`, `mime_type`, `velikost`, `vlozeno` as local time, `vlozil_jmeno`, `cesta`). Numbered subfolders have no `nazev`. Objects with mime `my/url` are links whose target is the file name. Recorded lectures are `video/mp4` objects named `video.fi.muni.cz?id=…;file=…`. Both have no `velikost`, and their `cesta` is a folder ending in `/`, so they have no file to download. `index.qwarp` (an interactive syllabus) can appear in more than one response, so the listing removes duplicates. Many lecture PDFs have a `.txt` version.
+- **Downloads** come from `/auth<cesta>`, with the file's real `Content-Type`; a missing file is HTTP 404. Files reach several GB, so `download_file` streams to disk with a size limit. It logs in on a small page first, because logging in returns to the requested URL. It refuses anything outside `/el/<faculty>/<period>/<course>/` and anything under `odp/`. Folders carry a `mam_precteno` flag. Downloading from a folder with the flag set left the course's unread count unchanged; whether downloading an unread file marks it as read was not tested.
 
 ## Online tests (`/auth/elearning/test_pruchod_el_student`)
 
@@ -45,4 +46,4 @@ One `.seznam-odp-predmet` block per course with `table.data3` rows: name and lin
 
 ## Not covered yet
 
-Second-factor login, IS reminders (`/auth/student/is_pripomina`, empty for this account, so its structure is unknown), downloading file contents, and grades from earlier semesters.
+Second-factor login, IS reminders (`/auth/student/is_pripomina`, empty for this account, so its structure is unknown), recorded lecture videos, Poskytovny (`/auth/of/...`), and grades from earlier semesters.

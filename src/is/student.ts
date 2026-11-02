@@ -14,6 +14,15 @@ export function parseAjaxHtml(body: string) {
 
 export const text = (node: { text(): string }) => node.text().replace(/\s+/g, " ").trim();
 
+/** Load an IS page, rejecting anything but its authenticated app view (e.g. the login form). */
+export function loadAppPage(html: string, what: string) {
+  const $ = load(html);
+  if ($("#app_content").length !== 1 || $('input[type="password"]').length) {
+    throw new Error(`Expected the authenticated ${what} page.`);
+  }
+  return $;
+}
+
 /** Read the current study context (faculty, period, study) from the student page's search form. */
 export function parseStudentContext(html: string) {
   const $ = load(html);

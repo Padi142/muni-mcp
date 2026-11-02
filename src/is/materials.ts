@@ -1,3 +1,10 @@
+import { randomUUID } from "node:crypto";
+import { createWriteStream } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { Readable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import { load } from "cheerio";
 import { IS_ORIGIN, type IsSession } from "./session.js";
 import { contextUrl, fetchStudentContext, text, type StudentContext } from "./student.js";
@@ -88,11 +95,13 @@ export function parseFolderXml(xml: string) {
       name: value("jmeno_souboru") ?? path.split("/").pop() ?? "",
       path,
       mimeType: value("mime_type"),
-      size: Number(value("velikost") ?? NaN),
+      size: value("velikost") === null ? null : Number(value("velikost")),
       uploaded: parseLocalIso(value("vlozeno")),
       uploadedBy: value("vlozil_jmeno"),
       // Link objects (mime "my/url") store their target as the file name.
       url: value("mime_type") === "my/url" ? value("jmeno_souboru") : `${IS_ORIGIN}/auth${path}`,
+      // Links and recorded lectures (hosted on video.fi.muni.cz) point at a folder, not a stored file.
+      downloadable: !path.endsWith("/"),
     };
   });
   const folder = (node: ReturnType<typeof $>) => ({
@@ -107,7 +116,7 @@ export function parseFolderXml(xml: string) {
   };
 }
 
-/** Folder paths must stay inside a course's study materials, e.g. `/el/fi/podzim2026/PV157/`. */
+/** Paths must stay inside a course's study materials, e.g. `/el/fi/podzim2026/PV157/`. */
 const materialsFolder = /^\/el\/[a-z]+\/[a-z]+\d{4}\/[^/]+\//;
 
 /**
@@ -115,7 +124,7 @@ const materialsFolder = /^\/el\/[a-z]+\/[a-z]+\d{4}\/[^/]+\//;
  * Each response already includes its subfolders' files, so only folders with deeper
  * subfolders are fetched. Online-test definitions (`odp/`) are skipped. Bounded to `maxRequests`.
  */
-export async function fetchCourseFiles(session: IsSession, folder: string, maxRequests = 30) {
+export async function fetchCourseFiles(session: Pick<IsSession, "getPage">, folder: string, maxRequests = 30) {
   if (!materialsFolder.test(folder)) throw new Error("Not a course study-materials folder.");
   const files = [];
   const queue = [{ path: folder, label: "" }];
@@ -138,7 +147,9 @@ export async function fetchCourseFiles(session: IsSession, folder: string, maxRe
       }
     }
   }
-  return { files, complete: queue.length === 0 };
+  // Some files, such as interactive syllabi, are listed by more than one response.
+  const unique = new Map(files.map((file) => [`${file.path}\n${file.name}`, file]));
+  return { files: [...unique.values()], complete: queue.length === 0 };
 }
 
 export async function fetchMaterialsOverview(session: IsSession, context: StudentContext) {
@@ -146,19 +157,87 @@ export async function fetchMaterialsOverview(session: IsSession, context: Studen
   return parseMaterialsOverview(page.html);
 }
 
-/** Fetch the materials overview, and the full file list for one course when `courseCode` is given. */
+/** Fetch the materials overview, optionally for one course. */
 export async function fetchMaterials(session: IsSession, options: { courseCode?: string } = {}) {
   const { context } = await fetchStudentContext(session);
   const overview = await fetchMaterialsOverview(session, context);
   const wanted = options.courseCode?.trim().toUpperCase();
   if (!wanted) return { source: "is-mu" as const, ...overview };
+  return {
+    source: "is-mu" as const,
+    courses: overview.courses.filter((c) => c.courseCode.toUpperCase() === wanted),
+    submissionFolders: overview.submissionFolders.filter((s) => s.courseCode.toUpperCase() === wanted),
+  };
+}
 
-  const course = overview.courses.find((c) => c.courseCode.toUpperCase() === wanted);
-  if (!course?.folder) throw new Error(`No study materials found for ${options.courseCode}.`);
+/** List every file in one course's study materials. */
+export async function fetchCourseMaterials(session: IsSession, courseCode: string) {
+  const { context } = await fetchStudentContext(session);
+  const { courses } = await fetchMaterialsOverview(session, context);
+  const wanted = courseCode.trim().toUpperCase();
+  const course = courses.find((c) => c.courseCode.toUpperCase() === wanted);
+  if (!course?.folder) {
+    const known = courses.map((c) => c.courseCode).join(", ");
+    throw new Error(`No study materials found for ${courseCode}. Courses with materials: ${known || "none"}.`);
+  }
   const { files, complete } = await fetchCourseFiles(session, course.folder);
   return {
     source: "is-mu" as const,
-    courses: [{ ...course, files, filesComplete: complete }],
-    submissionFolders: overview.submissionFolders.filter((s) => s.courseCode.toUpperCase() === wanted),
+    courseCode: course.courseCode,
+    name: course.name,
+    unreadFiles: course.unreadFiles,
+    files,
+    complete,
   };
+}
+
+/** Split a material file's path into safe segments. Online-test definitions (`odp/`) stay off limits. */
+function fileSegments(path: string) {
+  const segments = path.split("/").slice(1);
+  const safe = materialsFolder.test(path) && segments.every((s) => s && s !== "." && s !== ".." && !/[\\\0]/.test(s));
+  if (!safe) throw new Error("Not a file path from a course's study materials.");
+  if (segments.includes("odp")) throw new Error("Online-test files cannot be downloaded.");
+  return segments;
+}
+
+/**
+ * Stream one study-material file to `<directory>/<path below /el/>`, replacing any earlier copy.
+ * The file only appears under its final name once complete. Throws when it exceeds `maxBytes`.
+ */
+export async function downloadMaterial(
+  session: Pick<IsSession, "getFile">,
+  path: string,
+  options: { directory: string; maxBytes: number },
+) {
+  const segments = fileSegments(path);
+  const tooLarge = () => new Error(`The file exceeds the ${options.maxBytes / 1024 / 1024} MB limit. Raise maxSizeMb to download it anyway.`);
+  const response = await session.getFile(`${IS_ORIGIN}/auth/${segments.map(encodeURIComponent).join("/")}`);
+  if (Number(response.headers.get("content-length") ?? 0) > options.maxBytes) {
+    await response.body?.cancel();
+    throw tooLarge();
+  }
+  if (!response.body) throw new Error("IS MU returned an empty response.");
+
+  const savedTo = join(options.directory, ...segments.slice(1));
+  const partial = `${savedTo}.${randomUUID()}.part`;
+  await mkdir(dirname(savedTo), { recursive: true });
+  let bytes = 0;
+  try {
+    await pipeline(
+      Readable.fromWeb(response.body as NodeReadableStream<Uint8Array>),
+      async function* (source: AsyncIterable<Uint8Array>) {
+        for await (const chunk of source) {
+          bytes += chunk.length;
+          if (bytes > options.maxBytes) throw tooLarge();
+          yield chunk;
+        }
+      },
+      createWriteStream(partial, { mode: 0o600 }),
+    );
+    await rename(partial, savedTo);
+  } catch (error) {
+    await rm(partial, { force: true });
+    throw error;
+  }
+  return { path, savedTo, bytes, mimeType: response.headers.get("content-type") };
 }

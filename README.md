@@ -6,15 +6,18 @@ An MCP server that lets your AI assistant read your study information from [IS M
 
 Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?" or "When is my next exam, and are there free spots on another term?" and the assistant answers from your actual IS data.
 
-It only reads. It never registers you for anything, signs you off, or changes your data in IS.
+It only reads. It never registers you for anything or signs you off. The one thing that can change in IS is a file's unread status: downloading a study material may mark it as read, as opening it in your browser does.
 
 ## What it can do
 
 - **`list_courses`**: your courses this semester: credits, grade, how each course ends (exam, colloquium, credit), teachers, weekly schedule, how many study materials you haven't read yet, and links.
 - **`list_deadlines`**: what's due now and coming up: online tests opening and closing, homework submission deadlines, exam sign-off deadlines, exam dates, application periods. It also shows recent changes, like a teacher updating your points. Your regular classes can be included too.
 - **`list_exams`**: your exam registrations and all upcoming exam terms: date, time, room, free spots, registration deadlines, the teacher's notes, and whether you can still sign up. You can ask about a single course, e.g. `PV157`.
-- **`list_grades`**: your grades this semester, plus the points and notes teachers record for you in each course's notebooks (poznámkové bloky).
-- **`list_materials`**: how many study materials you haven't read yet in each course, interactive syllabi, and open homework folders. Ask about one course to get its full file list.
+- **`list_grades`**: your final grades and credits this semester.
+- **`list_notebooks`**: the points and notes teachers record for you in each course's notebooks (poznámkové bloky), with the files you submitted for each entry.
+- **`list_materials`**: how many study materials you haven't read yet in each course, interactive syllabi, and open homework folders.
+- **`list_course_files`**: every file in one course's study materials, with its folder, type, size and upload time.
+- **`download_file`**: saves one of those files to disk so the assistant can read it. Recorded lectures and links can't be downloaded; they are listed with their URL instead.
 - **`list_online_tests`**: your online tests (odpovědníky) with when they open and close, their status, and your results.
 
 ## Setup
@@ -55,6 +58,8 @@ Then add the server to your MCP client (Claude Desktop, Claude Code, Cursor, and
 
 If you prefer, you can set `MUNI_USERNAME` and `MUNI_PASSWORD` directly instead of using files.
 
+Downloads go to `~/Downloads/muni-mcp`, mirroring IS's folders. Set `MUNI_DOWNLOAD_DIR` to use another location. Files over 100 MB are refused unless the assistant asks for a higher limit.
+
 ## How it works
 
 The server logs in to IS MU the same way your browser does, opens the relevant pages, and turns them into clean structured data for the assistant. Your login cookies are kept in memory only. When the session expires, it simply logs in again.
@@ -76,7 +81,7 @@ The code lives in `src/`:
 - `is/session.ts` handles logging in and fetching pages.
 - `is/student.ts` reads the main student page; `is/courses.ts` and `is/deadlines.ts` build on it.
 - `is/exams.ts` reads the exam registration pages.
-- `is/grades.ts`, `is/materials.ts` and `is/online-tests.ts` read grades and notebooks, study materials, and online tests.
+- `is/grades.ts`, `is/notebooks.ts`, `is/materials.ts` and `is/online-tests.ts` read grades, notebooks, study materials, and online tests.
 - `is/time.ts` converts IS dates to proper Prague times.
 
 The `docs/` folder has background research on how IS MU works and on [vut-mcp](https://github.com/TheRamsay/vut-mcp), a similar project for Brno University of Technology.

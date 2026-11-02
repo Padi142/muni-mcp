@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
+import { mkdtemp, readdir, readFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
-import { fetchCourseFiles, parseFolderXml, parseMaterialsOverview } from "./materials.js";
+import { downloadMaterial, fetchCourseFiles, parseFolderXml, parseMaterialsOverview } from "./materials.js";
 import type { IsSession } from "./session.js";
 
 // Synthetic markup follows the observed structure without storing student HTML.
@@ -51,7 +54,7 @@ test("walks course folders through the File Manager API, skipping online tests",
       requested.push(path);
       return { url: new URL(url), html: pages[path]! };
     },
-  } satisfies IsSession;
+  } satisfies Pick<IsSession, "getPage">;
   const { files, complete } = await fetchCourseFiles(session, "/el/fi/podzim2026/XY001/");
   assert.deepEqual(requested, ["/el/fi/podzim2026/XY001/", "/el/fi/podzim2026/XY001/um/"]);
   assert.equal(complete, true);
@@ -60,4 +63,63 @@ test("walks course folders through the File Manager API, skipping online tests",
   ]);
   assert.equal(parseFolderXml(pages["/el/fi/podzim2026/XY001/"]!).subfolders[1]?.name, "Odpovědníky");
   await assert.rejects(fetchCourseFiles(session, "/auth/other/"), /study-materials folder/);
+});
+
+test("flags links and recorded lectures as not downloadable and removes repeated listings", async () => {
+  const video = `<objekt><jmeno_souboru>video.fi.muni.cz?id=1;file=L.mp4</jmeno_souboru><mime_type>video/mp4</mime_type><cesta>/el/fi/podzim2026/XY001/um/vi/9/</cesta></objekt>`;
+  const syllabus = file("index.qwarp", "/el/fi/podzim2026/XY001/index.qwarp");
+  const body = xml("/el/fi/podzim2026/XY001/", `<poduzly>
+    <poduzel><nazev>A</nazev><cesta>/el/fi/podzim2026/XY001/a/</cesta><objekty>${syllabus}${video}</objekty></poduzel>
+    <poduzel><nazev>A</nazev><cesta>/el/fi/podzim2026/XY001/b/</cesta><objekty>${syllabus}</objekty></poduzel></poduzly>`);
+  const session = { getPage: async (url: string | URL) => ({ url: new URL(url), html: body }) };
+  const { files } = await fetchCourseFiles(session, "/el/fi/podzim2026/XY001/");
+  assert.deepEqual(files.map((f) => [f.name, f.size, f.downloadable]), [
+    ["index.qwarp", 10, true],
+    ["video.fi.muni.cz?id=1;file=L.mp4", null, false],
+  ]);
+});
+
+test("downloads a file to its mirrored path, encoding the URL", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "muni-mcp-test-"));
+  t.after(() => rm(directory, { recursive: true }));
+  const requested: string[] = [];
+  const session = {
+    getFile: async (url: string | URL) => {
+      requested.push(String(url));
+      return new Response("hello", { headers: { "content-type": "text/plain" } });
+    },
+  };
+  const result = await downloadMaterial(session, "/el/fi/podzim2026/XY001/um/a b?.txt", { directory, maxBytes: 100 });
+  assert.deepEqual(requested, ["https://is.muni.cz/auth/el/fi/podzim2026/XY001/um/a%20b%3F.txt"]);
+  assert.equal(result.bytes, 5);
+  assert.equal(result.savedTo, join(directory, "fi/podzim2026/XY001/um/a b?.txt"));
+  assert.equal(await readFile(result.savedTo, "utf8"), "hello");
+});
+
+test("refuses paths outside study materials without requesting them", async () => {
+  const session = { getFile: async (): Promise<Response> => assert.fail("must not request") };
+  const options = { directory: "/nonexistent", maxBytes: 100 };
+  for (const path of [
+    "/auth/student/",
+    "/el/fi/podzim2026/XY001/../../../../../student/x",
+    "/el/fi/podzim2026/XY001/um/",
+    "/el/fi/podzim2026/XY001/um//x.pdf",
+    "/el/fi/podzim2026/XY001/um\\..\\x.pdf",
+  ]) {
+    await assert.rejects(downloadMaterial(session, path, options), /Not a file path/, path);
+  }
+  await assert.rejects(downloadMaterial(session, "/el/fi/podzim2026/XY001/odp/q.qdesc", options), /Online-test/);
+});
+
+test("leaves nothing behind when a file exceeds the limit", async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), "muni-mcp-test-"));
+  t.after(() => rm(directory, { recursive: true }));
+  const path = "/el/fi/podzim2026/XY001/big.bin";
+  const options = { directory, maxBytes: 3 };
+  const declared = { getFile: async () => new Response("hello", { headers: { "content-length": "5" } }) };
+  await assert.rejects(downloadMaterial(declared, path, options), /limit/);
+  // No declared length: the limit has to apply while streaming.
+  const stream = new ReadableStream({ start(c) { c.enqueue(new TextEncoder().encode("hello")); c.close(); } });
+  await assert.rejects(downloadMaterial({ getFile: async () => new Response(stream) }, path, options), /limit/);
+  assert.deepEqual(await readdir(join(directory, "fi/podzim2026/XY001")), []);
 });
