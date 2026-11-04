@@ -6,7 +6,7 @@ An MCP server that lets your AI assistant read your study information from [IS M
 
 Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?" or "When is my next exam, and are there free spots on another term?" and the assistant answers from your actual IS data.
 
-It only reads. It never registers you for anything or signs you off. The one thing that can change in IS is a file's unread status: downloading a study material may mark it as read, as opening it in your browser does.
+It only reads. It never registers you for anything, signs you off, or sends or deletes email. The one thing that can change in IS is unread status: downloading a study material, or opening an email or its attachment, may mark it as read, as doing that in your browser does. Listing emails never does.
 
 ## What it can do
 
@@ -19,6 +19,9 @@ It only reads. It never registers you for anything or signs you off. The one thi
 - **`list_course_files`**: every file in one course's study materials, with its folder, type, size and upload time.
 - **`download_file`**: saves one of those files to disk so the assistant can read it. Recorded lectures and links can't be downloaded; they are listed with their URL instead.
 - **`list_online_tests`**: your online tests (odpovědníky) with when they open and close, their status, and your results.
+- **`list_emails`**: your IS mail folders and one page of emails from any of them, newest first. It shows the inbox unless you pick another folder.
+- **`read_email`**: one email in full, as plain text, with a list of its attachments.
+- **`download_email_attachment`**: saves one of those attachments to disk so the assistant can read it.
 
 ## Setup
 
@@ -58,7 +61,9 @@ Then add the server to your MCP client (Claude Desktop, Claude Code, Cursor, and
 
 If you prefer, you can set `MUNI_USERNAME` and `MUNI_PASSWORD` directly instead of using files.
 
-Downloads go to `~/Downloads/muni-mcp`, mirroring IS's folders. Set `MUNI_DOWNLOAD_DIR` to use another location. Files over 100 MB are refused unless the assistant asks for a higher limit.
+Downloads go to `~/Downloads/muni-mcp`, mirroring IS's folders, with email attachments under `mail/`. Set `MUNI_DOWNLOAD_DIR` to use another location. Study files over 100 MB are refused unless the assistant asks for a higher limit.
+
+Anyone can email you, so an email can try to trick your assistant into doing something. The tools tell the assistant to treat email as data, not instructions, but be careful about what else you let it do while it reads your mail.
 
 ## How it works
 
@@ -82,6 +87,7 @@ The code lives in `src/`:
 - `is/student.ts` reads the main student page; `is/courses.ts` and `is/deadlines.ts` build on it.
 - `is/exams.ts` reads the exam registration pages.
 - `is/grades.ts`, `is/notebooks.ts`, `is/materials.ts` and `is/online-tests.ts` read grades, notebooks, study materials, and online tests.
+- `is/mail.ts` reads mail folders, emails, and their attachments.
 - `is/time.ts` converts IS dates to proper Prague times.
 
 The `docs/` folder has background research on how IS MU works and on [vut-mcp](https://github.com/TheRamsay/vut-mcp), a similar project for Brno University of Technology.

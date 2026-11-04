@@ -10,7 +10,7 @@ A GET to any `/auth/...` page redirects to `https://muni.islogin.cz/login/...`. 
 
 GET requests retry twice on a dropped connection or HTTP 409/502/503/504, and at most four requests run at once per session.
 
-IS changes state through plain GET links, so the session refuses any URL containing `prihlasit=`, `odhlasit=` (exam registration) or `operace=` (actions such as toggling a favourite course). The only POST it sends is the login form.
+IS changes state through plain GET links, so the session refuses any URL containing `prihlasit=`, `odhlasit=` (exam registration) or `operace=` (actions such as toggling a favourite course). Under `/auth/mail`, which deletes and sends the same way, it allows only the two paths and the parameters the mail tools use. The only POST it sends is the login form.
 
 IS separates query parameters with `;`, which `URLSearchParams` does not parse, so the code builds and reads these URLs by hand.
 
@@ -43,6 +43,17 @@ Without query parameters it shows the current study and period. The overview lis
 ## Online tests (`/auth/elearning/test_pruchod_el_student`)
 
 One `.seznam-odp-predmet` block per course with `table.data3` rows: name and link (`td.uzel`), result (`td.hodn-pb`), status as the icon title in `td.budik`, and the window as `od`/`do` wrappers around `.odp_date_time`. Rows with class `odp_bez_prav` are not accessible. Courses with very many tests are listed in `.zdurazneni.upozorneni` instead; showing them needs `prepocitat_vsechno=1`, a recount over five minutes long, which is never requested. Test links only select a test and are never followed.
+
+## Mail (`/auth/mail/`)
+
+Verified on 4 November 2026. [`src/is/mail.ts`](../src/is/mail.ts) implements this as `list_emails`, `read_email` and `download_email_attachment`.
+
+- **Folder page** (`/auth/mail/?folder_id=<id>;order_by=datum;desc=1;all=1`): each folder has hidden inputs `<id>_nazev` (name), `<id>_typ` (`INBOX`, `INBOX_RO`, `SENT`, `BAD`, `TRASH`, `USER`) and `<id>_pocty` ("unread/total"). Each message is a `tr#mail_<id>` with seven cells: checkbox, flags (`data-from_adr` holds the sender's address), empty, correspondent, subject (`a#read_link_<id>`), date, size. Class `riadok_new` marks unread.
+- **Paging is browser-side.** The largest folder tested (123 messages) came back whole, and `start`/`count` changed nothing, so the `jsStart`/`jsCount` in the page's URL hash only pick which rows to show. `list_emails` slices the list itself and sets `complete: false` if IS ever returns fewer rows than the folder's total. Folders much larger than this were not tested.
+- **List rows are approximate.** Subjects are shortened with an ellipsis. Dates are relative ("dnes 9:15", "včera 18:02", "Po 3. 11."), so older ones have no time and their year is inferred. In sent mail the correspondent is the recipient. The raw message has the exact values.
+- **Raw message** (`/auth/mail/download?slozka=<folder>;select-mail=<id>;download=1`): `message/rfc822` in mbox format, starting with an envelope `From ` line, parsed with `postal-mime`. Attachments are taken from it too, so there is one source and no scraping. An unknown ID gives HTTP 200 with an HTML page, so the content type has to be checked.
+- **Not used:** the rendered message (`?show_mail=<id>`), which could trip the session's password-field login check if an HTML email contains a password input, and single-part links (`download.pl/<name>?download=1;select-mail=<id>:<part>;slozka=<folder>`). The browser app's `mail_ajax` endpoint also carries the delete and send actions, such as `akce=drop_message`, and the session refuses it.
+- **Read status:** listing folders and opening already-read messages left the unread set unchanged. Whether the raw download marks an unread message as read was not tested, because that test would change the account's state, so the tools say that it may.
 
 ## Not covered yet
 

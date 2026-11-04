@@ -17,6 +17,16 @@ const FILE_TIMEOUT_MS = 10 * 60_000;
 // IS occasionally drops keep-alive sockets or briefly refuses a request; both succeed on retry.
 const retryableStatus = new Set([409, 502, 503, 504]);
 
+// The mail app deletes and sends through plain GET links (`akce=drop_message`, `akce=empty_trash`, `mail_posli`),
+// so only the folder view and the raw-message download are reachable, and only with these parameters.
+const mailPaths = new Set(["/auth/mail/", "/auth/mail/download"]);
+const mailParams = new Set(["folder_id", "order_by", "desc", "all", "slozka", "select-mail", "download"]);
+
+function isAllowedMailUrl(target: URL) {
+  const params = target.search.slice(1).split(/[;&]/).filter(Boolean);
+  return mailPaths.has(target.pathname) && params.every((param) => mailParams.has(param.split("=")[0] ?? ""));
+}
+
 function hasPasswordField(html: string) {
   return load(html)('input[type="password"]').length > 0;
 }
@@ -125,6 +135,10 @@ export function createIsSession(credentials: Credentials) {
     // IS changes state through plain GET links: exam (un)registration and actions like favourites.
     if (/(?:^|[?;&])(?:prihlasit|odhlasit|operace)=/i.test(target.search)) {
       throw new Error("Refusing to request an IS MU URL that changes data.");
+    }
+    // Decoded, so an encoded path such as /auth/%6Dail/ can't slip past the check.
+    if (/^\/+auth\/+mail\b/i.test(decodeURIComponent(target.pathname)) && !isAllowedMailUrl(target)) {
+      throw new Error("Refusing to request an IS MU mail URL that may change data.");
     }
     return target;
   }
