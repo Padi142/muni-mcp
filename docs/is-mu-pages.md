@@ -10,7 +10,7 @@ A GET to any `/auth/...` page redirects to `https://muni.islogin.cz/login/...`. 
 
 GET requests retry twice on a dropped connection or HTTP 409/502/503/504, and at most four requests run at once per session.
 
-IS changes state through plain GET links, so the session refuses any URL containing `prihlasit=`, `odhlasit=` (exam registration) or `operace=` (actions such as toggling a favourite course). Under `/auth/mail`, which deletes and sends the same way, it allows only the two paths and the parameters the mail tools use. The only POST it sends is the login form.
+IS changes state through plain GET links, so the session refuses any URL containing `prihlasit=`, `odhlasit=` (exam registration) or `operace=` (actions such as toggling a favourite course). Under `/auth/mail`, which deletes and sends the same way, it allows only the two paths and the parameters the mail tools use. On `/auth/lide/lide_znami`, where links end friendships and cancel or send requests, it allows only the plain list and the `mafr`, `mafr_ok` and `x` parameters that `send_friend_request` uses. The only POST it sends is the login form.
 
 IS separates query parameters with `;`, which `URLSearchParams` does not parse, so the code builds and reads these URLs by hand.
 
@@ -54,6 +54,16 @@ Verified on 4 November 2026. [`src/is/mail.ts`](../src/is/mail.ts) implements th
 - **Raw message** (`/auth/mail/download?slozka=<folder>;select-mail=<id>;download=1`): `message/rfc822` in mbox format, starting with an envelope `From ` line, parsed with `postal-mime`. Attachments are taken from it too, so there is one source and no scraping. An unknown ID gives HTTP 200 with an HTML page, so the content type has to be checked.
 - **Not used:** the rendered message (`?show_mail=<id>`), which could trip the session's password-field login check if an HTML email contains a password input, and single-part links (`download.pl/<name>?download=1;select-mail=<id>:<part>;slozka=<folder>`). The browser app's `mail_ajax` endpoint also carries the delete and send actions, such as `akce=drop_message`, and the session refuses it.
 - **Read status:** listing folders and opening already-read messages left the unread set unchanged. Whether the raw download marks an unread message as read was not tested, because that test would change the account's state, so the tools say that it may.
+
+## People
+
+Verified on 5 November 2026. [`src/is/people.ts`](../src/is/people.ts) implements this as `list_friends`, `search_people` and `send_friend_request`.
+
+- **Moji známí** (`/auth/lide/lide_znami`): `#edit_nav` holds IS's counts ("Seznam osob (34 známých + 15 požádaných)"), which the parser checks its rows against. Under the `h3` "Moji známí", each `.clen_info` row has the name in `b`, "učo N" in `.nedurazne`, the address in a `mail_posli?to=` link, and "naposledy v IS: D. M. YYYY[ H:MM]". Under "Lidé požádáni…", each `li` has the name and UČO. Requests sent to you should appear under a heading the help page calls "Lidé, kteří požádali…"; this account had none, so that section's layout is assumed to match.
+- **Actions take two GETs.** `mafr=<učo>` (send) and `care=<učo>` (cancel) only show a confirmation page: `h3`, the person's `.clen_info`, and a link, "ano, opravdu požádat" or "ano, opravdu zrušit", to `mafr_ok=1;mafr=<učo>;x=<token>` or `care_ok=1;care=<učo>;x=<token>`. Opening that link does it. `cafr=<učo>` ends a friendship and was not followed. `send_friend_request` reads the confirmation link from the page, checks its UČO, and then checks the list. The session refuses `care` and `cafr`.
+- **Refusals** come back as the normal list with a `.zdurazneni` note, such as "Nemůžete navázat známost sám se sebou" for your own UČO.
+- **A person's friends** (`?zn_uco=<učo>`) work only for your own friends; for anyone else, IS shows your own list with the note "Vybraná osoba není Váš známý, ignoruji". No tool uses this.
+- **People search** (`/auth/vyhledavani/?search=<text>;ag=os;start=<page>`): a GET returning `.vyh_polozka.lide` rows with the name in `h4 a`, "(učo N)" beside it, and details in `.vyh_hlavicky`. `start` is a page number, with 10 rows per page; `.strankovani` links to the other pages. Profile links can use a login name rather than a UČO, but `/auth/osoba/<učo>` also works. Different people can share a name exactly. The form on `/auth/lide/` does not return results without its JavaScript, so it isn't used.
 
 ## Not covered yet
 

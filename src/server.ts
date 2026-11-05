@@ -12,6 +12,7 @@ import { DEFAULT_MAX_BODY_CHARS, DEFAULT_PAGE_SIZE, downloadEmailAttachment, fet
 import { downloadMaterial, fetchCourseMaterials, fetchMaterials } from "./is/materials.js";
 import { fetchNotebooks } from "./is/notebooks.js";
 import { fetchOnlineTests } from "./is/online-tests.js";
+import { fetchFriends, searchPeople, sendFriendRequest } from "./is/people.js";
 import { createIsSession } from "./is/session.js";
 
 /** Read `NAME_FILE` (preferred, path to a private file) or fall back to `NAME`. */
@@ -238,6 +239,51 @@ serveStdio(() => {
       annotations: opensEmail,
     },
     async (args) => json(await downloadEmailAttachment(session, args, { directory: downloadDirectory })),
+  );
+
+  server.registerTool(
+    "list_friends",
+    {
+      title: "List IS MU friends",
+      description:
+        "The student's friends (Moji známí) in IS MU: `friends` with UČO, name, email, last time in IS and profile " +
+        "link; `requestsSent`, requests not answered yet; and `requestsReceived`, people waiting for an answer. " +
+        "`lastSeen` is a plain date when IS gives no time.",
+      annotations: readOnly,
+    },
+    async () => json(await fetchFriends(session)),
+  );
+
+  server.registerTool(
+    "search_people",
+    {
+      title: "Search people in IS MU",
+      description:
+        "Find people at the university by name or UČO using IS MU's search. Returns each match's UČO, name, details " +
+        "such as role and faculty, and profile link, 10 per page; `hasMore` says another page exists. Several people " +
+        "can share a name, so check the details.",
+      inputSchema: z.object({
+        query: z.string().describe("A name or UČO, e.g. Jan Novák."),
+        page: z.number().int().positive().optional().describe("Page number, starting at 1. Default 1."),
+      }),
+      annotations: readOnly,
+    },
+    async ({ query, page }) => json(await searchPeople(session, query, page)),
+  );
+
+  server.registerTool(
+    "send_friend_request",
+    {
+      title: "Send an IS MU friend request",
+      description:
+        "Ask someone to become the student's friend (Moji známí). IS immediately emails the person, and this " +
+        "can't be undone with these tools, so only use it when the student has clearly asked to add this person. Find " +
+        "their UČO with search_people first. Several people can share a name: if more than one could match, ask which " +
+        "one. `status` is sent, already-friends or already-requested; the last two send nothing.",
+      inputSchema: z.object({ uco: z.string().describe("The person's `uco` from search_people.") }),
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    async ({ uco }) => json(await sendFriendRequest(session, uco)),
   );
 
   return server;

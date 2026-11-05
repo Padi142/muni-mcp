@@ -6,7 +6,10 @@ An MCP server that lets your AI assistant read your study information from [IS M
 
 Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?" or "When is my next exam, and are there free spots on another term?" and the assistant answers from your actual IS data.
 
-It only reads. It never registers you for anything, signs you off, or sends or deletes email. The one thing that can change in IS is unread status: downloading a study material, or opening an email or its attachment, may mark it as read, as doing that in your browser does. Listing emails never does.
+It almost only reads. It never registers you for anything, signs you off, sends or deletes email, or removes friends. It can change two things in IS:
+
+- **Friend requests:** `send_friend_request` asks someone to be your friend, and IS emails them. This is the only tool that contacts anyone.
+- **Unread status:** downloading a study material, or opening an email or its attachment, may mark it as read, as doing that in your browser does. Listing emails never does.
 
 ## What it can do
 
@@ -22,6 +25,9 @@ It only reads. It never registers you for anything, signs you off, or sends or d
 - **`list_emails`**: your IS mail folders and one page of emails from any of them, newest first. It shows the inbox unless you pick another folder.
 - **`read_email`**: one email in full, as plain text, with a list of its attachments.
 - **`download_email_attachment`**: saves one of those attachments to disk so the assistant can read it.
+- **`list_friends`**: your friends (Moji známí), with their email and when they were last in IS, plus the requests you've sent and any waiting for your answer.
+- **`search_people`**: finds people at the university by name or UČO.
+- **`send_friend_request`**: asks someone to be your friend. IS emails them, so your assistant should only do this when you ask.
 
 ## Setup
 
@@ -88,6 +94,7 @@ The code lives in `src/`:
 - `is/exams.ts` reads the exam registration pages.
 - `is/grades.ts`, `is/notebooks.ts`, `is/materials.ts` and `is/online-tests.ts` read grades, notebooks, study materials, and online tests.
 - `is/mail.ts` reads mail folders, emails, and their attachments.
+- `is/people.ts` reads your friends, searches for people, and sends friend requests.
 - `is/time.ts` converts IS dates to proper Prague times.
 
 The `docs/` folder has background research on how IS MU works and on [vut-mcp](https://github.com/TheRamsay/vut-mcp), a similar project for Brno University of Technology.

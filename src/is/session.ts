@@ -17,14 +17,29 @@ const FILE_TIMEOUT_MS = 10 * 60_000;
 // IS occasionally drops keep-alive sockets or briefly refuses a request; both succeed on retry.
 const retryableStatus = new Set([409, 502, 503, 504]);
 
-// The mail app deletes and sends through plain GET links (`akce=drop_message`, `akce=empty_trash`, `mail_posli`),
-// so only the folder view and the raw-message download are reachable, and only with these parameters.
-const mailPaths = new Set(["/auth/mail/", "/auth/mail/download"]);
-const mailParams = new Set(["folder_id", "order_by", "desc", "all", "slozka", "select-mail", "download"]);
+// These areas change data through plain GET links, so only the listed paths and parameters are reachable.
+// Mail deletes and sends (`akce=drop_message`, `akce=empty_trash`, `mail_posli`). Moji známí ends friendships and
+// cancels requests (`cafr`, `care`), which stay blocked; `mafr`, `mafr_ok` and `x` are send_friend_request's steps.
+const guardedAreas = [
+  {
+    area: /^\/+auth\/+mail\b/i,
+    paths: new Set(["/auth/mail/", "/auth/mail/download"]),
+    params: new Set(["folder_id", "order_by", "desc", "all", "slozka", "select-mail", "download"]),
+  },
+  {
+    area: /^\/+auth\/+lide\/+lide_znami\b/i,
+    paths: new Set(["/auth/lide/lide_znami"]),
+    params: new Set(["mafr", "mafr_ok", "x"]),
+  },
+];
 
-function isAllowedMailUrl(target: URL) {
+function isRefusedByArea(target: URL) {
+  // Decoded, so an encoded path such as /auth/%6Dail/ can't slip past the check.
+  const path = decodeURIComponent(target.pathname);
+  const guarded = guardedAreas.find(({ area }) => area.test(path));
+  if (!guarded) return false;
   const params = target.search.slice(1).split(/[;&]/).filter(Boolean);
-  return mailPaths.has(target.pathname) && params.every((param) => mailParams.has(param.split("=")[0] ?? ""));
+  return !guarded.paths.has(target.pathname) || !params.every((param) => guarded.params.has(param.split("=")[0] ?? ""));
 }
 
 function hasPasswordField(html: string) {
@@ -32,9 +47,10 @@ function hasPasswordField(html: string) {
 }
 
 /**
- * An authenticated, read-only IS MU reader. Cookies live in memory only.
+ * An authenticated IS MU reader. Cookies live in memory only.
  * It logs in lazily on the first request and again whenever IS redirects to the login form
- * (e.g. after the session expires). The only POST it ever sends is the login form.
+ * (e.g. after the session expires). The only POST it ever sends is the login form, and the
+ * only change it can make beyond read status is send_friend_request's GET links.
  */
 export function createIsSession(credentials: Credentials) {
   const cookieFetch = makeFetchCookie(fetch);
@@ -136,10 +152,7 @@ export function createIsSession(credentials: Credentials) {
     if (/(?:^|[?;&])(?:prihlasit|odhlasit|operace)=/i.test(target.search)) {
       throw new Error("Refusing to request an IS MU URL that changes data.");
     }
-    // Decoded, so an encoded path such as /auth/%6Dail/ can't slip past the check.
-    if (/^\/+auth\/+mail\b/i.test(decodeURIComponent(target.pathname)) && !isAllowedMailUrl(target)) {
-      throw new Error("Refusing to request an IS MU mail URL that may change data.");
-    }
+    if (isRefusedByArea(target)) throw new Error("Refusing to request an IS MU URL that may change data.");
     return target;
   }
 
