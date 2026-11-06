@@ -57,7 +57,7 @@ export function contextUrl(path: string, context: StudentContext) {
 }
 
 /** Fetch the student page once to learn the current study context. */
-export async function fetchStudentContext(session: IsSession) {
+export async function fetchStudentContext(session: Pick<IsSession, "getPage">) {
   const page = await session.getPage(STUDENT_URL);
   return { html: page.html, context: parseStudentContext(page.html) };
 }

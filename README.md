@@ -4,7 +4,7 @@
 
 An MCP server that lets your AI assistant read your study information from [IS MU](https://is.muni.cz), the information system of Masaryk University.
 
-Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?" or "When is my next exam, and are there free spots on another term?" and the assistant answers from your actual IS data.
+Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?", "When is my next exam, and are there free spots on another term?" or "Which required courses do I still need to take?" and the assistant answers from your actual IS data.
 
 It almost only reads. It never registers you for anything, signs you off, sends or deletes email, or removes friends. It can change two things in IS:
 
@@ -17,6 +17,7 @@ It almost only reads. It never registers you for anything, signs you off, sends 
 - **`list_deadlines`**: what's due now and coming up: online tests opening and closing, homework submission deadlines, exam sign-off deadlines, exam dates, application periods. It also shows recent changes, like a teacher updating your points. Your regular classes can be included too.
 - **`list_exams`**: your exam registrations and all upcoming exam terms: date, time, room, free spots, registration deadlines, the teacher's notes, and whether you can still sign up. You can ask about a single course, e.g. `PV157`.
 - **`list_grades`**: your final grades and credits this semester.
+- **`check_study_requirements`**: checks your whole study against your program's requirements: which required courses and course groups you've done, which you're taking now, and which are still missing.
 - **`list_notebooks`**: the points and notes teachers record for you in each course's notebooks (poznámkové bloky), with the files you submitted for each entry.
 - **`list_materials`**: how many study materials you haven't read yet in each course, interactive syllabi, and open homework folders.
 - **`list_course_files`**: every file in one course's study materials, with its folder, type, size and upload time.
@@ -92,6 +93,7 @@ The code lives in `src/`:
 - `is/session.ts` handles logging in and fetching pages.
 - `is/student.ts` reads the main student page; `is/courses.ts` and `is/deadlines.ts` build on it.
 - `is/exams.ts` reads the exam registration pages.
+- `is/study-check.ts` checks the study against its program's requirements.
 - `is/grades.ts`, `is/notebooks.ts`, `is/materials.ts` and `is/online-tests.ts` read grades, notebooks, study materials, and online tests.
 - `is/mail.ts` reads mail folders, emails, and their attachments.
 - `is/people.ts` reads your friends, searches for people, and sends friend requests.

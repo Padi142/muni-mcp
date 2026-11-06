@@ -14,6 +14,7 @@ import { fetchNotebooks } from "./is/notebooks.js";
 import { fetchOnlineTests } from "./is/online-tests.js";
 import { fetchFriends, searchPeople, sendFriendRequest } from "./is/people.js";
 import { createIsSession } from "./is/session.js";
+import { fetchStudyCheck } from "./is/study-check.js";
 
 /** Read `NAME_FILE` (preferred, path to a private file) or fall back to `NAME`. */
 function readSecret(name: string) {
@@ -102,6 +103,22 @@ serveStdio(() => {
       annotations: readOnly,
     },
     async (args) => json(await fetchGrades(session, args)),
+  );
+
+  server.registerTool(
+    "check_study_requirements",
+    {
+      title: "Check IS MU study requirements",
+      description:
+        "Checks the whole study against its program's templates (Moje kontrola studia): which required courses " +
+        "and course groups are done and which are still missing, over all semesters. `requirements` is a tree of " +
+        "blocks (with a Czech `rule`, e.g. 'všech 11' = all 11, 'alespoň 1 z 2' = at least 1 of 2, " +
+        "'alespoň 17 kr.' = at least 17 credits) and courses. `status` is met, unmet, enrolled (taking it now, " +
+        "not finished) or met-in-other-study (informational, not counted). A course's `result` is the completion " +
+        "and credits earned, or for enrolled courses the ones it is enrolled for.",
+      annotations: readOnly,
+    },
+    async () => json(await fetchStudyCheck(session)),
   );
 
   server.registerTool(

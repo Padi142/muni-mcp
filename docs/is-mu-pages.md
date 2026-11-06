@@ -34,6 +34,14 @@ Without query parameters it shows the current study and period. The overview lis
 - **Grades** (`/auth/student/moje_znamky`): `table.data3 tr.elem_vybrane_obdobi` rows with seven cells: `FAC:CODE` and name, credits, completion type, grade (cell class `ok`/`ko` for passed/failed), date, note (e.g. "uznáno"), and who entered it. `.elem_vybrane_obdobi_only` holds "Kredity v zobrazeném semestru: N z M". The page's `prepocist_kredity=1` link triggers a recount and is never requested.
 - **Notebooks** (`/auth/student/poznamkove_bloky_nahled`, the current term without query parameters): one `li.ipb-seznam-pol#predmet_<id>` per course with a notebook, one `.ipb-pol` per notebook with `.ipb-nazev`, raw content in `.ipb-obsah pre`, and `.ipb-zmeneno` (changed, by). By IS convention `*N` marks points and `@X` a final grade. `.ipb-obsah-feedback` appears on notebooks with an attached submission folder and links the student's files as `/auth/el/.../ode/...`.
 
+## Study check (`/auth/student/moje_kontrola_studia`)
+
+Verified on 6 November 2026. [`src/is/study-check.ts`](../src/is/study-check.ts) implements this as `check_study_requirements`.
+
+- **Templates:** with `fakulta` and `studium` only, the page is a form. The study's templates (kontrolní šablony) are checkboxes, `sabprokon_p` for mandatory ones, after a hidden `exppar_sabprokon` holding the study ID. This account had no supplementary templates, so their field name is assumed to follow the same `sabprokon_<x>` pattern. A URL with another study's ID showed the current study instead.
+- **Check:** the form is a POST, but the same fields as a GET work: `?fakulta;studium;exppar_sabprokon=<study>;sabprokon_p=<template>;sabprokon_tl=Zkontrolovat studium`. The result is a flat run of rows inside the form, each ending in `<br>`: a `<tt>` indent of two `&nbsp;` per level, a marker (`font` green "o" met, red "x" unmet, blue "o" met in another study, `span.maybe` "?" enrolled now), then a `b`. A block's `b` holds its name, followed by "– rule" ("vše", "všech 11", "alespoň 1 z 2", "alespoň 17 kr."). A course's `b` holds a link to its catalogue page, followed by its name, an optional `<i>` with the completion and credits ("zk (4 kr.)"), and an optional "[ pož. ukončení: z, kredity: 16 ]". The same course can appear in several blocks. The page has no credit totals.
+- **Not used:** checking against any other template (`vybkonsab_*`), and the flat list of required courses (`zspp=Zobrazit`), which repeats the tree's courses without their status.
+
 ## Study materials
 
 - **Overview** (`/auth/student/studijni_materialy`): `h2` sections, each followed by a list or a "none" note: interactive syllabi, unread-file counts per course, open submission folders (odevzdávárny) with "(do D. M. YYYY vč.)", and all courses with materials (folder in the link's `furl`).
