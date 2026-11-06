@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { McpServer } from "@modelcontextprotocol/server";
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import * as z from "zod";
+import { DEFAULT_COURSE_PAGE_SIZE, FACULTIES, type Faculty, fetchCourse, searchCourses } from "./is/catalogue.js";
 import { fetchCourses } from "./is/courses.js";
 import { fetchDeadlines } from "./is/deadlines.js";
 import { fetchExams } from "./is/exams.js";
@@ -55,6 +56,47 @@ serveStdio(() => {
       annotations: readOnly,
     },
     async () => json(await fetchCourses(session)),
+  );
+
+  server.registerTool(
+    "search_courses",
+    {
+      title: "Search the IS MU course catalogue",
+      description:
+        "Searches all MU courses in the catalogue (Katalog předmětů), not just the student's, by code, name or " +
+        "text (e.g. 'machine learning', 'PA0'), optionally at one faculty and in one term. Without a term it " +
+        "covers the courses currently offered. IS matches loosely (adding diacritics and word forms, so 'rust' " +
+        "also finds 'růst'), so check the names. Returns code, faculty, name, term, teachers and link. IS lists at " +
+        "most 300 courses per search; when `complete` is false, narrow the search. Use get_course for details.",
+      inputSchema: z.object({
+        query: z.string().optional().describe("Code, name or words from the syllabus."),
+        faculty: z.enum(Object.keys(FACULTIES) as [Faculty, ...Faculty[]]).optional().describe("Only this faculty, e.g. FI."),
+        term: z.string().optional().describe("Only this term, e.g. 'podzim 2026' or 'jaro 2027' (spring)."),
+        page: z.number().int().min(1).default(1),
+        pageSize: z.number().int().min(1).max(300).default(DEFAULT_COURSE_PAGE_SIZE),
+      }),
+      annotations: readOnly,
+    },
+    async (args) => json(await searchCourses(session, args)),
+  );
+
+  server.registerTool(
+    "get_course",
+    {
+      title: "Get an IS MU course's catalogue page",
+      description:
+        "Any MU course's catalogue page: faculty, term, link to its study materials, and its `sections` keyed by " +
+        "IS's Czech titles, such as Rozsah (hours, credits, completion), Vyučující (teachers), Garance, Rozvrh " +
+        "(schedule), Předpoklady (prerequisites), Anotace, Výstupy z učení (learning outcomes), Klíčová témata " +
+        "(syllabus), Způsob ověření (assessment) and Vyučovací jazyk (language). Without a term it shows the " +
+        "current offering and lists the other terms it's offered in.",
+      inputSchema: z.object({
+        code: z.string().describe("Course code, e.g. PA015, or FI:PA015 when several faculties use the code."),
+        term: z.string().optional().describe("A term such as 'jaro 2027'. Omit for the current offering."),
+      }),
+      annotations: readOnly,
+    },
+    async (args) => json(await fetchCourse(session, args)),
   );
 
   server.registerTool(

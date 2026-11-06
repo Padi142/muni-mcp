@@ -4,7 +4,7 @@
 
 An MCP server that lets your AI assistant read your study information from [IS MU](https://is.muni.cz), the information system of Masaryk University.
 
-Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?", "When is my next exam, and are there free spots on another term?" or "Which required courses do I still need to take?" and the assistant answers from your actual IS data.
+Ask things like "What deadlines do I have this week?", "How many points do I have in PA191?", "What new lecture slides are there in PV157?", "When is my next exam, and are there free spots on another term?", "Which required courses do I still need to take?" or "Is there a course about Rust next spring?" and the assistant answers from your actual IS data.
 
 It almost only reads. It never registers you for anything, signs you off, sends or deletes email, or removes friends. It can change two things in IS:
 
@@ -14,6 +14,8 @@ It almost only reads. It never registers you for anything, signs you off, sends 
 ## What it can do
 
 - **`list_courses`**: your courses this semester: credits, grade, how each course ends (exam, colloquium, credit), teachers, weekly schedule, how many study materials you haven't read yet, and links.
+- **`search_courses`**: searches all MU courses in the catalogue by code, name or topic, optionally at one faculty and in one term.
+- **`get_course`**: any course's catalogue page: credits, how it ends, teachers, schedule, prerequisites, annotation, syllabus, assessment and language.
 - **`list_deadlines`**: what's due now and coming up: online tests opening and closing, homework submission deadlines, exam sign-off deadlines, exam dates, application periods. It also shows recent changes, like a teacher updating your points. Your regular classes can be included too.
 - **`list_exams`**: your exam registrations and all upcoming exam terms: date, time, room, free spots, registration deadlines, the teacher's notes, and whether you can still sign up. You can ask about a single course, e.g. `PV157`.
 - **`list_grades`**: your final grades and credits this semester.
@@ -93,6 +95,7 @@ The code lives in `src/`:
 - `is/session.ts` handles logging in and fetching pages.
 - `is/student.ts` reads the main student page; `is/courses.ts` and `is/deadlines.ts` build on it.
 - `is/exams.ts` reads the exam registration pages.
+- `is/catalogue.ts` searches the course catalogue and reads course pages.
 - `is/study-check.ts` checks the study against its program's requirements.
 - `is/grades.ts`, `is/notebooks.ts`, `is/materials.ts` and `is/online-tests.ts` read grades, notebooks, study materials, and online tests.
 - `is/mail.ts` reads mail folders, emails, and their attachments.

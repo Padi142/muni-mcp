@@ -17,10 +17,23 @@ const FILE_TIMEOUT_MS = 10 * 60_000;
 // IS occasionally drops keep-alive sockets or briefly refuses a request; both succeed on retry.
 const retryableStatus = new Set([409, 502, 503, 504]);
 
+// Parameters that act wherever they appear: exam (un)registration, and actions such as starring a course.
+const actionParam = /^(?:prihlasit|odhlasit|operace)$/i;
+
+type GuardedArea = {
+  area: RegExp;
+  paths: Set<string>;
+  params: Set<string>;
+  /** `operace` values allowed here despite `actionParam`. */
+  operations?: Set<string>;
+};
+
 // These areas change data through plain GET links, so only the listed paths and parameters are reachable.
 // Mail deletes and sends (`akce=drop_message`, `akce=empty_trash`, `mail_posli`). Moji známí ends friendships and
 // cancels requests (`cafr`, `care`), which stay blocked; `mafr`, `mafr_ok` and `x` are send_friend_request's steps.
-const guardedAreas = [
+// The course catalogue's AJAX also stars courses (`akce=oblib`) and edits the course selection
+// (`operace=add_course`…); only its search, `operace=get_courses`, is reachable.
+const guardedAreas: GuardedArea[] = [
   {
     area: /^\/+auth\/+mail\b/i,
     paths: new Set(["/auth/mail/", "/auth/mail/download"]),
@@ -31,16 +44,44 @@ const guardedAreas = [
     paths: new Set(["/auth/lide/lide_znami"]),
     params: new Set(["mafr", "mafr_ok", "x"]),
   },
+  {
+    area: /^\/+auth\/+predmety\/+predmety_ajax\b/i,
+    paths: new Set(["/auth/predmety/predmety_ajax.pl"]),
+    params: new Set(["operace", "filters", "search_text"]),
+    operations: new Set(["get_courses"]),
+  },
 ];
 
-function isRefusedByArea(target: URL) {
-  // Decoded, so an encoded path such as /auth/%6Dail/ can't slip past the check.
-  const path = decodeURIComponent(target.pathname);
-  const guarded = guardedAreas.find(({ area }) => area.test(path));
-  if (!guarded) return false;
-  const params = target.search.slice(1).split(/[;&]/).filter(Boolean);
-  return !guarded.paths.has(target.pathname) || !params.every((param) => guarded.params.has(param.split("=")[0] ?? ""));
+const decodeParam = (part: string) => decodeURIComponent(part.replace(/\+/g, " "));
+
+/** Query parameters as decoded `[name, value]` pairs, so `%6Fperace=` counts as `operace=`. IS accepts `;` and `&`. */
+function queryParams(target: URL) {
+  return target.search.slice(1).split(/[;&]/).filter(Boolean).map((part) => {
+    const [name = "", value = ""] = part.split(/=(.*)/s);
+    return [decodeParam(name), decodeParam(value)] as const;
+  });
 }
+
+/** Which rule refuses this URL, if any. Malformed escapes are refused too. */
+function refusal(target: URL) {
+  try {
+    // Decoded, so an encoded path such as /auth/%6Dail/ can't slip past the check.
+    const path = decodeURIComponent(target.pathname);
+    const guarded = guardedAreas.find(({ area }) => area.test(path));
+    const params = queryParams(target);
+    if (params.some(([name, value]) => actionParam.test(name) && !(name === "operace" && guarded?.operations?.has(value)))) {
+      return "Refusing to request an IS MU URL that changes data.";
+    }
+    if (guarded && (!guarded.paths.has(target.pathname) || params.some(([name]) => !guarded.params.has(name)))) {
+      return "Refusing to request an IS MU URL that may change data.";
+    }
+    return null;
+  } catch {
+    return "Refusing to request a malformed IS MU URL.";
+  }
+}
+
+const LOGIN_FAILED = "IS MU login failed. Check credentials; MFA or another login step may be required.";
 
 function hasPasswordField(html: string) {
   return load(html)('input[type="password"]').length > 0;
@@ -56,6 +97,10 @@ export function createIsSession(credentials: Credentials) {
   const cookieFetch = makeFetchCookie(fetch);
   let active = 0;
   const waiting: (() => void)[] = [];
+  // Every visit to the login page issues a new form that invalidates the previous ones, so parallel
+  // requests must not each log in. They wait for one shared login, which fetches its own form.
+  let authenticated = false;
+  let loggingIn: Promise<void> | undefined;
 
   // One HTTP exchange: at most MAX_CONCURRENT at a time; GETs retry on network errors and
   // retryable statuses. The login POST is never retried.
@@ -148,27 +193,37 @@ export function createIsSession(credentials: Credentials) {
   function isTarget(input: string | URL) {
     const target = new URL(input, IS_ORIGIN);
     if (target.origin !== IS_ORIGIN) throw new Error("Only IS MU pages can be requested.");
-    // IS changes state through plain GET links: exam (un)registration and actions like favourites.
-    if (/(?:^|[?;&])(?:prihlasit|odhlasit|operace)=/i.test(target.search)) {
-      throw new Error("Refusing to request an IS MU URL that changes data.");
-    }
-    if (isRefusedByArea(target)) throw new Error("Refusing to request an IS MU URL that may change data.");
+    const refused = refusal(target);
+    if (refused) throw new Error(refused);
     return target;
+  }
+
+  /** Log in, or join the login already in progress. */
+  function logIn() {
+    loggingIn ??= (async () => {
+      const start = await request(new URL("/auth/student/", IS_ORIGIN));
+      const page = start.url.origin === LOGIN_ORIGIN ? await submitLogin(start) : start;
+      if (page.url.origin !== IS_ORIGIN || hasPasswordField(page.html)) throw new Error(LOGIN_FAILED);
+      authenticated = true;
+    })().finally(() => {
+      loggingIn = undefined;
+    });
+    return loggingIn;
   }
 
   /** GET an authenticated IS MU page, logging in first when needed. */
   async function getPage(input: string | URL): Promise<Page> {
     const target = isTarget(input);
+    if (!authenticated) await logIn();
     let page = await request(target);
     if (page.url.origin === LOGIN_ORIGIN) {
-      page = await submitLogin(page);
-      // IS normally returns to the requested page; fetch it explicitly if it did not.
-      if (page.url.origin === IS_ORIGIN && page.url.pathname !== target.pathname) {
-        page = await request(target);
-      }
+      // The session expired.
+      authenticated = false;
+      await logIn();
+      page = await request(target);
     }
     if (page.url.origin !== IS_ORIGIN || hasPasswordField(page.html)) {
-      throw new Error("IS MU login failed. Check credentials; MFA or another login step may be required.");
+      throw new Error(LOGIN_FAILED);
     }
     return page;
   }
